@@ -423,6 +423,9 @@ func (cog *MultiCOG) computeStructure(bigtiff bool) error {
 		}
 	*/
 
+	zoomFactors := []struct {
+		Size, Zoom float64
+	}{{}}
 	for i, ifd := range cog.ifds {
 		ifd.ntags, ifd.tagsSize, ifd.strileSize, ifd.nplanes = ifd.structure(bigtiff)
 		ifd.ntilesx = (ifd.ImageWidth + uint64(ifd.TileWidth) - 1) / uint64(ifd.TileWidth)
@@ -465,6 +468,25 @@ func (cog *MultiCOG) computeStructure(bigtiff bool) error {
 				zl++
 			}
 			sifd.ZoomLevel = zl
+		}
+		// Check zoom Factors
+		for _, sifd := range ifd.SubIFDs {
+			size := math.Max(float64(ifd.ImageWidth), float64(ifd.ImageLength))
+			if sifd.ZoomLevel == len(zoomFactors) {
+				zoomFactors = append(zoomFactors, struct {
+					Size, Zoom float64
+				}{size, sifd.zoomFactor})
+			} else {
+				// Check that the overview size of the smallest image is the same using both zoomFactors
+				if math.Min(size, zoomFactors[sifd.ZoomLevel].Size)*math.Abs(1./sifd.zoomFactor-1./zoomFactors[sifd.ZoomLevel].Zoom) > 2 {
+					// TODO it may not work when topifd sizes are too different
+					return fmt.Errorf("ifds do not have the same zoom factors subifd[%d].zoomFactor=%f, expected %f", sifd.ZoomLevel, sifd.zoomFactor, zoomFactors[sifd.ZoomLevel].Zoom)
+				}
+				if zoomFactors[sifd.ZoomLevel].Size < size {
+					zoomFactors[sifd.ZoomLevel].Size = size
+					zoomFactors[sifd.ZoomLevel].Zoom = sifd.zoomFactor
+				}
+			}
 		}
 	}
 	return nil
